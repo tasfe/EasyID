@@ -4,6 +4,7 @@ import redis.clients.jedis.*;
 import redis.clients.util.Hashing;
 import redis.clients.util.Sharded;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -61,6 +62,14 @@ public class JedisUtil {
                 String set = jedis.set(key, value);
                 jedis.expire(key, EXPIRE);
                 return set;
+            }
+        });
+    }
+
+    public ShardedJedisPipeline getPipeline() {
+        return (ShardedJedisPipeline)command(new JedisCommand<Object>() {
+            public Object command(ShardedJedis jedis) {
+                return jedis.pipelined();
             }
         });
     }
