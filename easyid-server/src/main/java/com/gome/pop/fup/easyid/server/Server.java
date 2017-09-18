@@ -1,43 +1,29 @@
 package com.gome.pop.fup.easyid.server;
 
-import com.gome.pop.fup.easyid.handler.DecoderHandler;
-import com.gome.pop.fup.easyid.handler.Handler;
 import com.gome.pop.fup.easyid.model.Request;
 import com.gome.pop.fup.easyid.snowflake.Snowflake;
 import com.gome.pop.fup.easyid.util.*;
 import com.gome.pop.fup.easyid.zk.ZkClient;
-import io.netty.bootstrap.ServerBootstrap;
-import io.netty.buffer.PooledByteBufAllocator;
-import io.netty.channel.ChannelFuture;
-import io.netty.channel.ChannelInitializer;
-import io.netty.channel.ChannelOption;
-import io.netty.channel.EventLoopGroup;
-import io.netty.channel.nio.NioEventLoopGroup;
-import io.netty.channel.socket.SocketChannel;
-import io.netty.channel.socket.nio.NioServerSocketChannel;
 import org.apache.log4j.Logger;
 import org.apache.zookeeper.KeeperException;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Component;
-import redis.clients.jedis.Pipeline;
 import redis.clients.jedis.ShardedJedisPipeline;
 
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.nio.ByteBuffer;
+import java.nio.channels.*;
+import java.util.Iterator;
+import java.util.Set;
 
 /**
  * 服务端，接收创建id的请求
  * Created by fupeng-ds on 2017/8/2.
  */
-@Component
-public class Server implements Runnable {
+public class Server extends Thread {
 
     private static final Logger logger = Logger.getLogger(Server.class);
 
-    private ExecutorService executorService = Executors.newSingleThreadExecutor();
-
-    @Autowired
-    private Snowflake snowflake;
+    private Snowflake snowflake = new Snowflake();
 
     private ZkClient zkClient;
 
@@ -47,7 +33,11 @@ public class Server implements Runnable {
 
     private JedisUtil jedisUtil;
 
-    public void start() throws Exception {
+    private Selector selector;
+
+    private ServerSocketChannel serverSocketChannel;
+
+    public void startup() throws Exception {
         jedisUtil = JedisUtil.newInstance(redisAddress);
         String localHost = IpUtil.getLocalHost();
         Cache.set(Constant.LOCALHOST, localHost, -1l);
@@ -55,62 +45,86 @@ public class Server implements Runnable {
         zkClient.register(localHost);
         //查看redis中是否有id,没有则创建
         pushIdsInRedis();
-        //启动服务
-        executorService.submit(this);
-        logger.info("EasyID Server started!");
+        selector = Selector.open();
+        serverSocketChannel = ServerSocketChannel.open();
+        serverSocketChannel.socket().setReuseAddress(true);
+        serverSocketChannel.configureBlocking(false);
+        serverSocketChannel.socket().bind(new InetSocketAddress("127.0.0.1", Constant.EASYID_SERVER_PORT));
+        serverSocketChannel.register(selector, SelectionKey.OP_ACCEPT);
         Runtime.getRuntime().addShutdownHook(new Thread(new Runnable() {
             public void run() {
                 zkClient.close();
                 jedisUtil.close();
-                executorService.shutdown();
             }
         }));
+        //启动服务
+        this.start();
+
+
     }
 
     public void run() {
-        EventLoopGroup bossGroup = new NioEventLoopGroup(1);
-        EventLoopGroup workerGroup = new NioEventLoopGroup(8);
-        try {
-            ServerBootstrap bootstrap = new ServerBootstrap();
-            bootstrap
-                    .group(bossGroup, workerGroup)
-                    .channel(NioServerSocketChannel.class)
-                    .childHandler(new ChannelInitializer<SocketChannel>() {
+        logger.info("EasyID Server started!");
+        while (true) {
+            try {
+                int key = selector.select(1000);
+                if (key > 0) {
+                    Set<SelectionKey> selectionKeys = selector.selectedKeys();
+                    Iterator<SelectionKey> iterator = selectionKeys.iterator();
+                    while (iterator.hasNext()) {
+                        SelectionKey selectionKey = iterator.next();
+                        handle(selectionKey);
+                    }
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            } catch (KeeperException e) {
+                e.printStackTrace();
+            }
+        }
+    }
 
-                        @Override
-                        protected void initChannel(SocketChannel socketChannel)
-                                throws Exception {
-                            socketChannel.pipeline()
-                                    .addLast(new DecoderHandler(Request.class))
-                                    .addLast(new Handler(jedisUtil, snowflake, zkClient));
-                        }
-                    }).option(ChannelOption.SO_BACKLOG, 128)
-                    .childOption(ChannelOption.SO_KEEPALIVE, true)
-                    .option(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
-                    .childOption(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT);
-            ChannelFuture future = bootstrap.bind(IpUtil.getLocalHost(), Constant.EASYID_SERVER_PORT).sync();
-            future.channel().closeFuture().sync();
-        } catch (Exception e) {
-            e.printStackTrace();
-            logger.error(e.getMessage());
-        } finally {
-            workerGroup.shutdownGracefully();
-            bossGroup.shutdownGracefully();
+    private void handle(SelectionKey key) throws IOException, KeeperException, InterruptedException {
+        if (key.isValid()) {
+            if (key.isAcceptable()) {
+                ServerSocketChannel serverSocketChannel = (ServerSocketChannel)key.channel();
+                SocketChannel socketChannel = serverSocketChannel.accept();
+                if (socketChannel != null) {
+                    socketChannel.configureBlocking(false);
+                    socketChannel.register(selector, SelectionKey.OP_READ);
+                }
+            }
+            if (key.isReadable()) {
+                SocketChannel socketChannel = (SocketChannel)key.channel();
+                ByteBuffer buffer = ByteBuffer.allocate(1024);
+                int read = socketChannel.read(buffer);
+                if (read > 0) {
+                    buffer.flip();
+                    byte[] bytes = new byte[buffer.remaining()];
+                    buffer.get(bytes);
+                    Request request = KryoUtil.byteToObj(bytes, Request.class);
+                    if (request.getType() == MessageType.REQUEST_TYPE_CREATE) {
+                        pushIdsInRedis();
+                    }
+                }
+            }
         }
     }
 
     private void pushIdsInRedis() throws KeeperException, InterruptedException {
         //从zookeeper中获取队列长度参数
-        int base = zkClient.getRedisListSize();
+        int redis_list_size = zkClient.getRedisListSize();
         Long len = jedisUtil.llen(Constant.REDIS_LIST_NAME);
-        ShardedJedisPipeline pipeline = jedisUtil.getPipeline();
-        if (len == null || len.intValue() == 0 || len.intValue() < (base * 300)) {
-            long[] ids = snowflake.nextIds((base * 1000) - len.intValue());
+        if (len == null) len = 0l;
+        if (len.intValue() < (redis_list_size * 300)) {
+            long[] ids = snowflake.nextIds((redis_list_size * 1000) - len.intValue());
             String[] strings = ConversionUtil.longsToStrings(ids);
-            //jedisUtil.rpush(Constant.REDIS_LIST_NAME, strings);
-            pipeline.rpush(Constant.REDIS_LIST_NAME, strings);
+            jedisUtil.rpush(Constant.REDIS_LIST_NAME, strings);
         }
-        pipeline.sync();
+        //删除redis锁
+        //jedisUtil.del(Constant.REDIS_SETNX_KEY);
     }
 
     public Snowflake getSnowflake() {
