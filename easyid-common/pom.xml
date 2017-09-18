@@ -15,22 +15,6 @@
             <artifactId>zookeeper</artifactId>
             <version>3.4.6</version>
         </dependency>
-        <!-- spring -->
-        <dependency>
-            <groupId>org.springframework</groupId>
-            <artifactId>spring-core</artifactId>
-            <version>4.3.0.RELEASE</version>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework</groupId>
-            <artifactId>spring-beans</artifactId>
-            <version>4.3.0.RELEASE</version>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework</groupId>
-            <artifactId>spring-context-support</artifactId>
-            <version>4.3.0.RELEASE</version>
-        </dependency>
         <!-- jedis -->
         <dependency>
             <groupId>redis.clients</groupId>
