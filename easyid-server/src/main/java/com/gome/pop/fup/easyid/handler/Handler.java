@@ -9,7 +9,9 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
 import org.apache.log4j.Logger;
 import org.apache.zookeeper.KeeperException;
+import redis.clients.jedis.Pipeline;
 import redis.clients.jedis.ShardedJedis;
+import redis.clients.jedis.ShardedJedisPipeline;
 
 import java.io.IOException;
 
@@ -31,13 +33,15 @@ public class Handler extends SimpleChannelInboundHandler<Request> {
     protected void channelRead0(ChannelHandlerContext ctx, Request request) throws Exception {
         if (request.getType() == MessageType.REQUEST_TYPE_CREATE) {
             long begin = System.currentTimeMillis();
-            ShardedJedis jedis = jedisUtil.getJedis();
+            //ShardedJedis jedis = jedisUtil.getJedis();
+            ShardedJedisPipeline pipeline = jedisUtil.getPipeline();
             try {
                 int redis_list_size = zkClient.getRedisListSize();
                 String ip = (String) Cache.get(Constant.LOCALHOST);
                 //zkClient.increase(ip);
                 new Thread(new IncreaseRunnable(zkClient, ip)).start();
-                Long len = jedis.llen(Constant.REDIS_LIST_NAME);
+                Long len = jedisUtil.llen(Constant.REDIS_LIST_NAME);
+
                 if (len < (redis_list_size * 300)) {
                     LOGGER.info("len : " + len);
                     if (null == len) len = 0l;
@@ -46,12 +50,14 @@ public class Handler extends SimpleChannelInboundHandler<Request> {
                     String[] strs = ConversionUtil.longsToStrings(ids);
                     LOGGER.info("ids : " + ids.length);
                     //将生成的id存入redis队列
-                    jedis.rpush(Constant.REDIS_LIST_NAME, strs);
+                    //jedis.rpush(Constant.REDIS_LIST_NAME, strs);
+                    pipeline.rpush(Constant.REDIS_LIST_NAME, strs);
                 }
+                pipeline.sync();
                 LOGGER.info("handler run time:" + (System.currentTimeMillis() - begin));
             } finally {
-                jedis.del(Constant.REDIS_SETNX_KEY);
-                jedisUtil.returnResource(jedis);
+                jedisUtil.del(Constant.REDIS_SETNX_KEY);
+                //jedisUtil.returnResource(jedis);
                 //zkClient.decrease(ip);
                 ctx.writeAndFlush("").addListener(ChannelFutureListener.CLOSE);
             }
