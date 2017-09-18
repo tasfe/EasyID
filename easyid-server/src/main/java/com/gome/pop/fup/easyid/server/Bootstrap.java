@@ -23,8 +23,7 @@ public class Bootstrap {
      * @throws InterruptedException
      */
     public static void main(String[] args) throws Exception {
-        ClassPathXmlApplicationContext context = new ClassPathXmlApplicationContext("classpath:spring-config.xml");
-        Server server = context.getBean(Server.class);
+        Server server = new Server();
         String zookeeperAddres = "";
         String redisAddress = "";
         for (String arg : args) {
@@ -41,10 +40,10 @@ public class Bootstrap {
         } else {
             server.setRedisAddress(redisAddress);
         }
-        server.start();
+        server.startup();
         //自动管理workerid与datacenterid
         ZkClient zkClient = server.getZkClient();
-        Snowflake snowflake = context.getBean(Snowflake.class);
+        Snowflake snowflake = server.getSnowflake();
         int size = zkClient.getRootChildrenSize();
         if (size > 31) {
             int times = size/31;
