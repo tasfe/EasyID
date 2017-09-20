@@ -48,6 +48,8 @@ public class EasyID {
 
     private JedisUtil jedisUtil;
 
+    ByteBuffer buffer;
+
     /**
      *ZooKeeper服务地址
      */
@@ -131,7 +133,7 @@ public class EasyID {
             while (true) {
                 try {
                     selector.select(1000);
-                    //从队列中获取请求信息；若队列为空，则一直阻塞
+                    //从队列中获取请求信息
                     Request request = queue.poll();
                     if (request != null) {
                         Set<SelectionKey> selectionKeys = selector.selectedKeys();
@@ -143,7 +145,7 @@ public class EasyID {
                                     SocketChannel socketChannel = (SocketChannel) key.channel();
                                     if (socketChannel.finishConnect()) {
                                         //将请求写入缓存
-                                        ByteBuffer buffer = ByteBuffer.wrap(KryoUtil.objToByte(request));
+                                        buffer = ByteBuffer.wrap(KryoUtil.objToByte(request));
                                         socketChannel.write(buffer);
                                         buffer.clear();
                                     }
@@ -174,10 +176,11 @@ public class EasyID {
                 socketChannel.configureBlocking(false);
                 channelPool.put(host, socketChannel);
                 socketChannel.connect(inetSocketAddress);
-                selector.wakeup();
                 key = socketChannel.register(selector, SelectionKey.OP_CONNECT);
+            } else {
+                key = socketChannel.register(selector, SelectionKey.OP_WRITE);
             }
-
+            selector.wakeup();
         } catch (IOException e) {
             e.printStackTrace();
             logger.error(e.getMessage());
