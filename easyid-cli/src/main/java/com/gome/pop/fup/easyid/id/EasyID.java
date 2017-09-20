@@ -20,9 +20,9 @@ import org.apache.zookeeper.KeeperException;
 import redis.clients.jedis.ShardedJedis;
 
 import java.io.IOException;
-import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingQueue;
 
 /**
  * 客户端ID生成类
@@ -42,6 +42,8 @@ public class EasyID {
     private ZkClient zkClient;
 
     private JedisUtil jedisUtil;
+
+    private LinkedBlockingQueue<Request> queue = new LinkedBlockingQueue<Request>();
 
     /**
      *ZooKeeper服务地址
@@ -67,6 +69,8 @@ public class EasyID {
                     executorService.shutdown();
                 }
             }));
+            SendThread sendThread = new SendThread();
+            sendThread.start();
         } catch (IOException e) {
             e.printStackTrace();
         } catch (KeeperException e) {
@@ -112,54 +116,60 @@ public class EasyID {
     private void getRedisLock(ShardedJedis jedis) {
         if (jedis.setnx(Constant.REDIS_SETNX_KEY, "1") == 1l) {
             jedis.expire(Constant.REDIS_SETNX_KEY, 3);
-            try {
-                send();
-            } catch (KeeperException e) {
-                e.printStackTrace();
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            }
+            Request request = new Request(MessageType.REQUEST_TYPE_CREATE);
+            queue.offer(request);
         }
     }
 
-    /**
-     * 开启另外的线程，访问服务端
-     */
-    private void send() throws KeeperException, InterruptedException {
-        executorService.submit(new Callable<Object>() {
-            public Object call() throws Exception {
-                //通过zookeeper的负载均衡算法，获取服务端ip地址
-                String ip = zkClient.balance();
-                final String host = IpUtil.getHost(ip);
-                final int port = Constant.EASYID_SERVER_PORT;
-                EventLoopGroup group = new NioEventLoopGroup();
-                try {
-                    Bootstrap bootstrap = new Bootstrap();
-                    bootstrap.group(group).channel(NioSocketChannel.class)
-                            .handler(new ChannelInitializer<SocketChannel>() {
+    private class SendThread extends Thread {
 
-                                @Override
-                                protected void initChannel(SocketChannel ch)
-                                        throws Exception {
-                                    ch.pipeline()
-                                            .addLast(new EncoderHandler());
-                                }
-                            }).option(ChannelOption.SO_KEEPALIVE, true);
-                    // 链接服务器
-                    ChannelFuture future = bootstrap.connect(host, port).sync();
-                    // 将request对象写入outbundle处理后发出
-                    future.channel().writeAndFlush(new Request(MessageType.REQUEST_TYPE_CREATE)).sync();
-                    // 服务器同步连接断开时,这句代码才会往下执行
-                    future.channel().closeFuture().sync();
-
-                } catch (Exception e) {
-                    logger.error(e);
-                } finally {
-                    group.shutdownGracefully();
+        @Override
+        public void run() {
+            while (true) {
+                Request request = queue.poll();
+                if (request != null) {
+                    try {
+                        //通过zookeeper的负载均衡算法，获取服务端ip地址
+                        String ip = zkClient.balance();
+                        String host = IpUtil.getHost(ip);
+                        int port = Constant.EASYID_SERVER_PORT;
+                        send(host, port, request);
+                    } catch (KeeperException e) {
+                        e.printStackTrace();
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
                 }
-                return null;
             }
-        });
+        }
+
+        public void send(String host, int port, Request request) {
+            EventLoopGroup group = new NioEventLoopGroup();
+            try {
+                Bootstrap bootstrap = new Bootstrap();
+                bootstrap.group(group).channel(NioSocketChannel.class)
+                        .handler(new ChannelInitializer<SocketChannel>() {
+
+                            @Override
+                            protected void initChannel(SocketChannel ch)
+                                    throws Exception {
+                                ch.pipeline()
+                                        .addLast(new EncoderHandler());
+                            }
+                        }).option(ChannelOption.SO_KEEPALIVE, true);
+                // 链接服务器
+                ChannelFuture future = bootstrap.connect(host, port).sync();
+                // 将request对象写入outbundle处理后发出
+                future.channel().writeAndFlush(request).sync();
+                // 服务器同步连接断开时,这句代码才会往下执行
+                future.channel().closeFuture().sync();
+
+            } catch (Exception e) {
+                logger.error(e);
+            } finally {
+                group.shutdownGracefully();
+            }
+        }
     }
 
     public boolean isFlag() {
