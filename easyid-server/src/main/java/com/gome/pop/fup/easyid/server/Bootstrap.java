@@ -5,7 +5,6 @@ import com.gome.pop.fup.easyid.exception.ZooKeeperNoAddressException;
 import com.gome.pop.fup.easyid.snowflake.Snowflake;
 import com.gome.pop.fup.easyid.zk.ZkClient;
 import org.apache.zookeeper.KeeperException;
-import org.springframework.context.support.ClassPathXmlApplicationContext;
 
 import java.io.IOException;
 
