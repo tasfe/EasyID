@@ -17,9 +17,9 @@ import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
 import org.apache.log4j.Logger;
 import org.apache.zookeeper.KeeperException;
-import org.springframework.beans.factory.InitializingBean;
 import redis.clients.jedis.ShardedJedis;
 
+import java.io.IOException;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -28,7 +28,7 @@ import java.util.concurrent.Executors;
  * 客户端ID生成类
  * Created by fupeng-ds on 2017/8/3.
  */
-public class EasyID implements InitializingBean{
+public class EasyID {
 
     private static final Logger logger = Logger.getLogger(EasyID.class);
 
@@ -53,7 +53,28 @@ public class EasyID implements InitializingBean{
      */
     private String redisAddress;
 
-
+    public EasyID(String zkAddress, String redisAddress) {
+        this.zkAddress = zkAddress;
+        this.redisAddress = redisAddress;
+        try {
+            //初始化ZkClient
+            this.zkClient = new ZkClient(zkAddress);
+            this.jedisUtil = JedisUtil.newInstance(redisAddress);
+            Runtime.getRuntime().addShutdownHook(new Thread(new Runnable() {
+                public void run() {
+                    zkClient.close();
+                    jedisUtil.close();
+                    executorService.shutdown();
+                }
+            }));
+        } catch (IOException e) {
+            e.printStackTrace();
+        } catch (KeeperException e) {
+            e.printStackTrace();
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+    }
 
     /**
      * 获取id
@@ -173,16 +194,4 @@ public class EasyID implements InitializingBean{
         this.redisAddress = redisAddress;
     }
 
-    public void afterPropertiesSet() throws Exception {
-        //初始化ZkClient
-        this.zkClient = new ZkClient(zkAddress);
-        this.jedisUtil = JedisUtil.newInstance(redisAddress);
-        Runtime.getRuntime().addShutdownHook(new Thread(new Runnable() {
-            public void run() {
-                zkClient.close();
-                jedisUtil.close();
-                executorService.shutdown();
-            }
-        }));
-    }
 }
