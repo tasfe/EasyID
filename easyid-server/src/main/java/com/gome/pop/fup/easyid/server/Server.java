@@ -19,8 +19,6 @@ import org.apache.log4j.Logger;
 import org.apache.zookeeper.KeeperException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
-import redis.clients.jedis.Pipeline;
-import redis.clients.jedis.ShardedJedisPipeline;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -103,14 +101,11 @@ public class Server implements Runnable {
         //从zookeeper中获取队列长度参数
         int base = zkClient.getRedisListSize();
         Long len = jedisUtil.llen(Constant.REDIS_LIST_NAME);
-        ShardedJedisPipeline pipeline = jedisUtil.getPipeline();
         if (len == null || len.intValue() == 0 || len.intValue() < (base * 300)) {
             long[] ids = snowflake.nextIds((base * 1000) - len.intValue());
             String[] strings = ConversionUtil.longsToStrings(ids);
-            //jedisUtil.rpush(Constant.REDIS_LIST_NAME, strings);
-            pipeline.rpush(Constant.REDIS_LIST_NAME, strings);
+            jedisUtil.rpush(Constant.REDIS_LIST_NAME, strings);
         }
-        pipeline.sync();
     }
 
     public Snowflake getSnowflake() {
