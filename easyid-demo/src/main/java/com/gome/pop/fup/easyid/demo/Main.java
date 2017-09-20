@@ -1,18 +1,15 @@
 package com.gome.pop.fup.easyid.demo;
 
 import com.gome.pop.fup.easyid.id.EasyID;
-import org.springframework.context.support.ClassPathXmlApplicationContext;
-
 /**
  * Created by fupeng-ds on 2017/8/4.
  */
 public class Main {
 
     public static void main(String[] args) {
-        ClassPathXmlApplicationContext context = new ClassPathXmlApplicationContext("classpath:spring-config.xml");
-        final EasyID easyID = context.getBean(EasyID.class);
+        final EasyID easyID = new EasyID("192.168.56.102:2181", "192.168.56.102:6379");
         //final JedisUtil jedisUtil = JedisUtil.newInstance("192.168.56.102", 6379);
-        for (int i = 0; i < 4500; i++) {
+        for (int i = 0; i < 1500; i++) {
             Thread thread = new Thread(new Runnable() {
                 public void run() {
                     long id = 0;
@@ -27,7 +24,6 @@ public class Main {
             });
             thread.start();
         }
-        context.close();
     }
 
 
