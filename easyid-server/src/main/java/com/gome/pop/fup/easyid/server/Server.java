@@ -67,14 +67,12 @@ public class Server extends Thread {
         logger.info("EasyID Server started!");
         while (true) {
             try {
-                int key = selector.select(1000);
-                if (key > 0) {
-                    Set<SelectionKey> selectionKeys = selector.selectedKeys();
-                    Iterator<SelectionKey> iterator = selectionKeys.iterator();
-                    while (iterator.hasNext()) {
-                        SelectionKey selectionKey = iterator.next();
-                        handle(selectionKey);
-                    }
+                selector.select(1000);
+                Set<SelectionKey> selectionKeys = selector.selectedKeys();
+                Iterator<SelectionKey> iterator = selectionKeys.iterator();
+                while (iterator.hasNext()) {
+                    SelectionKey selectionKey = iterator.next();
+                    handle(selectionKey);
                 }
             } catch (IOException e) {
                 e.printStackTrace();
@@ -87,29 +85,38 @@ public class Server extends Thread {
     }
 
     private void handle(SelectionKey key) throws IOException, KeeperException, InterruptedException {
-        if (key.isValid()) {
-            if (key.isAcceptable()) {
-                ServerSocketChannel serverSocketChannel = (ServerSocketChannel)key.channel();
-                SocketChannel socketChannel = serverSocketChannel.accept();
-                if (socketChannel != null) {
-                    socketChannel.configureBlocking(false);
-                    socketChannel.register(selector, SelectionKey.OP_READ);
+        try {
+            if (key.isValid()) {
+                if (key.isAcceptable()) {
+                    ServerSocketChannel serverSocketChannel = (ServerSocketChannel)key.channel();
+                    SocketChannel socketChannel = serverSocketChannel.accept();
+                    if (socketChannel != null) {
+                        socketChannel.configureBlocking(false);
+                        socketChannel.register(selector, SelectionKey.OP_READ);
+                    }
                 }
-            }
-            if (key.isReadable()) {
-                SocketChannel socketChannel = (SocketChannel)key.channel();
-                ByteBuffer buffer = ByteBuffer.allocate(1024);
-                int read = socketChannel.read(buffer);
-                if (read > 0) {
-                    buffer.flip();
-                    byte[] bytes = new byte[buffer.remaining()];
-                    buffer.get(bytes);
-                    Request request = KryoUtil.byteToObj(bytes, Request.class);
-                    if (request.getType() == MessageType.REQUEST_TYPE_CREATE) {
-                        pushIdsInRedis();
+                if (key.isReadable()) {
+                    SocketChannel socketChannel = (SocketChannel)key.channel();
+                    ByteBuffer buffer = ByteBuffer.allocate(1024);
+                    int read = socketChannel.read(buffer);
+                    if (read > 0) {
+                        buffer.flip();
+                        byte[] bytes = new byte[buffer.remaining()];
+                        buffer.get(bytes);
+                        Request request = KryoUtil.byteToObj(bytes, Request.class);
+                        if (request.getType() == MessageType.REQUEST_TYPE_CREATE) {
+                            pushIdsInRedis();
+                        }
                     }
                 }
             }
+        } catch (IOException e) {
+            e.printStackTrace();
+            key.cancel();
+        } catch (KeeperException e) {
+            e.printStackTrace();
+        } catch (InterruptedException e) {
+            e.printStackTrace();
         }
     }
 
