@@ -5,7 +5,6 @@ import com.gome.pop.fup.easyid.exception.ZooKeeperNoAddressException;
 import com.gome.pop.fup.easyid.snowflake.Snowflake;
 import com.gome.pop.fup.easyid.zk.ZkClient;
 import org.apache.zookeeper.KeeperException;
-import org.springframework.context.support.ClassPathXmlApplicationContext;
 
 import java.io.IOException;
 
@@ -23,8 +22,7 @@ public class Bootstrap {
      * @throws InterruptedException
      */
     public static void main(String[] args) throws Exception {
-        ClassPathXmlApplicationContext context = new ClassPathXmlApplicationContext("classpath:spring-config.xml");
-        Server server = context.getBean(Server.class);
+
         String zookeeperAddres = "";
         String redisAddress = "";
         for (String arg : args) {
@@ -33,18 +31,15 @@ public class Bootstrap {
         }
         if ("".equals(zookeeperAddres)) {
             throw new ZooKeeperNoAddressException("没有zookeeper地址");
-        } else {
-            server.setZookeeperAddres(zookeeperAddres);
         }
         if ("".equals(redisAddress)) {
             throw new RedisNoAddressException("没有redis地址");
-        } else {
-            server.setRedisAddress(redisAddress);
         }
+        Server server = new Server(zookeeperAddres, redisAddress);
         server.start();
         //自动管理workerid与datacenterid
         ZkClient zkClient = server.getZkClient();
-        Snowflake snowflake = context.getBean(Snowflake.class);
+        Snowflake snowflake = server.getSnowflake();
         int size = zkClient.getRootChildrenSize();
         if (size > 31) {
             int times = size/31;
