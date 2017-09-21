@@ -20,6 +20,8 @@ import org.apache.zookeeper.KeeperException;
 import redis.clients.jedis.ShardedJedis;
 
 import java.io.IOException;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -31,6 +33,11 @@ import java.util.concurrent.LinkedBlockingQueue;
 public class EasyID {
 
     private static final Logger logger = Logger.getLogger(EasyID.class);
+
+    /**
+     * 连接池，维护与服务端的长连接
+     */
+    private Map<String, ChannelFuture> channelPool = new ConcurrentHashMap<String, ChannelFuture>();
 
     /**
      * 服务端开始生成新的ID的开关
@@ -73,10 +80,13 @@ public class EasyID {
             sendThread.start();
         } catch (IOException e) {
             e.printStackTrace();
+            logger.error(e.getMessage());
         } catch (KeeperException e) {
             e.printStackTrace();
+            logger.error(e.getMessage());
         } catch (InterruptedException e) {
             e.printStackTrace();
+            logger.error(e.getMessage());
         }
     }
 
@@ -123,6 +133,30 @@ public class EasyID {
      */
     private class SendThread extends Thread {
 
+        private EventLoopGroup group;
+
+        private Bootstrap bootstrap;
+
+        public SendThread() {
+            group = new NioEventLoopGroup();
+            bootstrap = new Bootstrap();
+            bootstrap.group(group).channel(NioSocketChannel.class)
+                    .handler(new ChannelInitializer<SocketChannel>() {
+
+                        @Override
+                        protected void initChannel(SocketChannel ch)
+                                throws Exception {
+                            ch.pipeline()
+                                    .addLast(new EncoderHandler());
+                        }
+                    }).option(ChannelOption.SO_KEEPALIVE, true);
+            Runtime.getRuntime().addShutdownHook(new Thread(new Runnable() {
+                public void run() {
+                    group.shutdownGracefully();
+                }
+            }));
+        }
+
         @Override
         public void run() {
             while (true) {
@@ -133,41 +167,44 @@ public class EasyID {
                         String ip = zkClient.balance();
                         String host = IpUtil.getHost(ip);
                         int port = Constant.EASYID_SERVER_PORT;
-                        send(host, port, request);      //发送
+                        ChannelFuture channelFuture = channelPool.get(host);
+                        if (channelFuture == null) {
+                            channelFuture = connect(host, port);
+                            channelPool.put(host, channelFuture);
+                        }
+                        send(channelFuture, request);      //发送
                     } catch (KeeperException e) {
                         e.printStackTrace();
+                        logger.error(e.getMessage());
                     } catch (InterruptedException e) {
                         e.printStackTrace();
+                        logger.error(e.getMessage());
                     }
                 }
             }
         }
 
-        public void send(String host, int port, Request request) {
-            EventLoopGroup group = new NioEventLoopGroup();
+        public ChannelFuture connect(String host, int port) {
+            ChannelFuture future = null;
             try {
-                Bootstrap bootstrap = new Bootstrap();
-                bootstrap.group(group).channel(NioSocketChannel.class)
-                        .handler(new ChannelInitializer<SocketChannel>() {
-
-                            @Override
-                            protected void initChannel(SocketChannel ch)
-                                    throws Exception {
-                                ch.pipeline()
-                                        .addLast(new EncoderHandler());
-                            }
-                        }).option(ChannelOption.SO_KEEPALIVE, true);
                 // 链接服务器
-                ChannelFuture future = bootstrap.connect(host, port).sync();
+                future = bootstrap.connect(host, port).sync();
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+                logger.error(e.getMessage());
+            }
+            return future;
+        }
+
+        public void send(ChannelFuture future, Request request) {
+            try {
                 // 将request对象写入outbundle处理后发出
                 future.channel().writeAndFlush(request).sync();
                 // 服务器同步连接断开时,这句代码才会往下执行
-                future.channel().closeFuture().sync();
-
-            } catch (Exception e) {
-                logger.error(e);
-            } finally {
-                group.shutdownGracefully();
+                //future.channel().closeFuture().sync();
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+                logger.error(e.getMessage());
             }
         }
     }
