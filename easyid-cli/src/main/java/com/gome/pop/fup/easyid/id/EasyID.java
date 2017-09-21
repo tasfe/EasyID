@@ -43,7 +43,7 @@ public class EasyID {
 
     private JedisUtil jedisUtil;
 
-    private LinkedBlockingQueue<Request> queue = new LinkedBlockingQueue<Request>();
+    private LinkedBlockingQueue<Request> sendQueue = new LinkedBlockingQueue<Request>(8);
 
     /**
      *ZooKeeper服务地址
@@ -85,7 +85,6 @@ public class EasyID {
      * @return
      */
     public long nextId() throws InterruptedException {
-        long begin = System.currentTimeMillis();
         int list_min_size = zkClient.getRedisListSize() * 300;
         String id = "";
         ShardedJedis jedis = jedisUtil.getJedis();
@@ -103,8 +102,6 @@ public class EasyID {
             Thread.sleep(100l);
             return nextId();
         }
-        //logger.info("nextId use time : " + (System.currentTimeMillis() - begin));
-        System.out.println("nextId use time : " + (System.currentTimeMillis() - begin));
         return Long.valueOf(id);
     }
 
@@ -114,26 +111,29 @@ public class EasyID {
      * @throws InterruptedException
      */
     private void getRedisLock(ShardedJedis jedis) {
-        if (jedis.setnx(Constant.REDIS_SETNX_KEY, "1") == 1l) {
-            jedis.expire(Constant.REDIS_SETNX_KEY, 3);
+        if (jedis.setnx(Constant.REDIS_SETNX_KEY, "1") == 1l) {     //redis加锁
+            jedis.expire(Constant.REDIS_SETNX_KEY, 3);              //设置有效时间
             Request request = new Request(MessageType.REQUEST_TYPE_CREATE);
-            queue.offer(request);
+            sendQueue.offer(request);   //向发送队列中推入请求
         }
     }
 
+    /**
+     * 向服务端发送指令的线程
+     */
     private class SendThread extends Thread {
 
         @Override
         public void run() {
             while (true) {
-                Request request = queue.poll();
+                Request request = sendQueue.poll();     //从发送队列中去出请求
                 if (request != null) {
                     try {
                         //通过zookeeper的负载均衡算法，获取服务端ip地址
                         String ip = zkClient.balance();
                         String host = IpUtil.getHost(ip);
                         int port = Constant.EASYID_SERVER_PORT;
-                        send(host, port, request);
+                        send(host, port, request);      //发送
                     } catch (KeeperException e) {
                         e.printStackTrace();
                     } catch (InterruptedException e) {
