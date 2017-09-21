@@ -17,6 +17,9 @@ import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 import org.apache.log4j.Logger;
 import org.apache.zookeeper.KeeperException;
+import redis.clients.jedis.ShardedJedis;
+
+import java.io.IOException;
 
 /**
  * 服务端，接收创建id的请求
@@ -62,25 +65,50 @@ public class Server {
         acceptThread.start();
     }
 
-    private void pushIdsInRedis() throws KeeperException, InterruptedException {
-        //从zookeeper中获取队列长度参数
-        int base = zkClient.getRedisListSize();
-        Long len = jedisUtil.llen(Constant.REDIS_LIST_NAME);
-        if (len == null || len.intValue() == 0 || len.intValue() < (base * 300)) {
-            long[] ids = snowflake.nextIds((base * 1000) - len.intValue());
-            String[] strings = ConversionUtil.longsToStrings(ids);
-            jedisUtil.rpush(Constant.REDIS_LIST_NAME, strings);
+    public void pushIdsInRedis() throws KeeperException, InterruptedException {
+        ShardedJedis jedis = jedisUtil.getJedis();
+        try {
+            int redis_list_size = zkClient.getRedisListSize();
+            String ip = (String) Cache.get(Constant.LOCALHOST);
+            //zkClient.increase(ip);
+            new Thread(new IncreaseRunnable(zkClient, ip)).start();
+            Long len = jedis.llen(Constant.REDIS_LIST_NAME);
+
+            if (len < (redis_list_size * 300)) {
+                logger.info("len : " + len);
+                if (null == len) len = 0l;
+                //批量生成id
+                long[] ids = snowflake.nextIds((redis_list_size * 1000) - len.intValue());
+                String[] strs = ConversionUtil.longsToStrings(ids);
+                logger.info("ids : " + ids.length);
+                //将生成的id存入redis队列
+                jedis.rpush(Constant.REDIS_LIST_NAME, strs);
+            }
+        } finally {
+            jedisUtil.returnResource(jedis);
         }
     }
 
+    /**
+     * 接收线程，用于接收客户端请求
+     */
     private class AcceptThread extends Thread {
+
+        private EventLoopGroup bossGroup;
+
+        private EventLoopGroup workerGroup;
+
+        private ServerBootstrap bootstrap;
+
+        public AcceptThread() {
+            bossGroup = new NioEventLoopGroup(1);
+            workerGroup = new NioEventLoopGroup(8);
+            bootstrap = new ServerBootstrap();
+        }
 
         @Override
         public void run() {
-            EventLoopGroup bossGroup = new NioEventLoopGroup(1);
-            EventLoopGroup workerGroup = new NioEventLoopGroup(8);
             try {
-                ServerBootstrap bootstrap = new ServerBootstrap();
                 bootstrap
                         .group(bossGroup, workerGroup)
                         .channel(NioServerSocketChannel.class)
@@ -91,7 +119,7 @@ public class Server {
                                     throws Exception {
                                 socketChannel.pipeline()
                                         .addLast(new DecoderHandler(Request.class))
-                                        .addLast(new Handler(jedisUtil, snowflake, zkClient));
+                                        .addLast(new Handler(Server.this, jedisUtil, snowflake, zkClient));
                             }
                         }).option(ChannelOption.SO_BACKLOG, 128)
                         .childOption(ChannelOption.SO_KEEPALIVE, true)
@@ -105,6 +133,30 @@ public class Server {
             } finally {
                 workerGroup.shutdownGracefully();
                 bossGroup.shutdownGracefully();
+            }
+        }
+    }
+
+    private class IncreaseRunnable implements Runnable {
+
+        private ZkClient zkClient;
+
+        private String ip;
+
+        public IncreaseRunnable(ZkClient zkClient, String ip) {
+            this.zkClient = zkClient;
+            this.ip = ip;
+        }
+
+        public void run() {
+            try {
+                zkClient.increase(ip);
+            } catch (KeeperException e) {
+                e.printStackTrace();
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            } catch (IOException e) {
+                e.printStackTrace();
             }
         }
     }
