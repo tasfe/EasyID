@@ -10,6 +10,8 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
 import org.apache.log4j.Logger;
 
+import java.util.concurrent.Future;
+
 /**
  * 请求处理handler
  * Created by fupeng-ds on 2017/8/3.
@@ -37,7 +39,7 @@ public class Handler extends SimpleChannelInboundHandler<Request> {
                 jedisUtil.del(Constant.REDIS_SETNX_KEY);
                 //jedisUtil.returnResource(jedis);
                 //zkClient.decrease(ip);
-                ctx.writeAndFlush("").addListener(ChannelFutureListener.CLOSE);
+                //ctx.writeAndFlush("").addListener(ChannelFutureListener.CLOSE);
             }
         }
     }
