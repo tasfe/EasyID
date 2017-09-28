@@ -95,22 +95,24 @@ public class EasyID {
      * @return
      */
     public long nextId() throws InterruptedException {
-        int list_min_size = zkClient.getRedisListSize() * 300;
-        String id = "";
         ShardedJedis jedis = jedisUtil.getJedis();
-        long len = 0l;
         try {
-            len = jedis.llen(Constant.REDIS_LIST_NAME);
-            if ((int) len < list_min_size) {
-                getRedisLock(jedis);
-            }
-            id = jedis.lpop(Constant.REDIS_LIST_NAME);
+            int list_min_size = zkClient.getRedisListSize() * 300;
+            return getId(jedis, list_min_size);
         } finally {
             jedisUtil.returnResource(jedis);
         }
+    }
+
+    private long getId(ShardedJedis jedis, int list_min_size) throws InterruptedException {
+        long len = jedis.llen(Constant.REDIS_LIST_NAME);
+        if ((int) len < list_min_size) {
+            getRedisLock(jedis);
+        }
+        String id = jedis.lpop(Constant.REDIS_LIST_NAME);
         if (len == 0l || null == id || "".equals(id)) {
             Thread.sleep(100l);
-            return nextId();
+            return getId(jedis, list_min_size);
         }
         return Long.valueOf(id);
     }
