@@ -5,12 +5,9 @@ import com.gome.pop.fup.easyid.server.Server;
 import com.gome.pop.fup.easyid.snowflake.Snowflake;
 import com.gome.pop.fup.easyid.util.*;
 import com.gome.pop.fup.easyid.zk.ZkClient;
-import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
 import org.apache.log4j.Logger;
-
-import java.util.concurrent.Future;
 
 /**
  * 请求处理handler
