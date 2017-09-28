@@ -197,10 +197,10 @@ public class EasyID {
 
         public void send(ChannelFuture future, Request request) {
             try {
-                // 将request对象写入outbundle处理后发出，异步发送
+                // 将request对象写入outbundle处理后发出
                 future.channel().writeAndFlush(request).sync();
                 // 服务器同步连接断开时,这句代码才会往下执行
-                future.channel().closeFuture().sync();
+                //future.channel().closeFuture().sync();
             } catch (InterruptedException e) {
                 e.printStackTrace();
                 logger.error(e.getMessage());

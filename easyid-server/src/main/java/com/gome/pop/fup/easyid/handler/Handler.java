@@ -19,10 +19,6 @@ public class Handler extends SimpleChannelInboundHandler<Request> {
 
     private JedisUtil jedisUtil;
 
-    private Snowflake snowflake;
-
-    private ZkClient zkClient;
-
     private Server server;
 
     @Override
@@ -41,11 +37,9 @@ public class Handler extends SimpleChannelInboundHandler<Request> {
         }
     }
 
-    public Handler(Server server, JedisUtil jedisUtil, Snowflake snowflake, ZkClient zkClient) {
+    public Handler(Server server, JedisUtil jedisUtil) {
         this.server = server;
         this.jedisUtil = jedisUtil;
-        this.snowflake = snowflake;
-        this.zkClient = zkClient;
     }
 
     public JedisUtil getJedisUtil() {
@@ -54,22 +48,6 @@ public class Handler extends SimpleChannelInboundHandler<Request> {
 
     public void setJedisUtil(JedisUtil jedisUtil) {
         this.jedisUtil = jedisUtil;
-    }
-
-    public Snowflake getSnowflake() {
-        return snowflake;
-    }
-
-    public void setSnowflake(Snowflake snowflake) {
-        this.snowflake = snowflake;
-    }
-
-    public ZkClient getZkClient() {
-        return zkClient;
-    }
-
-    public void setZkClient(ZkClient zkClient) {
-        this.zkClient = zkClient;
     }
 
 }

@@ -119,7 +119,7 @@ public class Server {
                                     throws Exception {
                                 socketChannel.pipeline()
                                         .addLast(new DecoderHandler(Request.class))
-                                        .addLast(new Handler(Server.this, jedisUtil, snowflake, zkClient));
+                                        .addLast(new Handler(Server.this, jedisUtil));
                             }
                         }).option(ChannelOption.SO_BACKLOG, 128)
                         .childOption(ChannelOption.SO_KEEPALIVE, true)
