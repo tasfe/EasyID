@@ -22,8 +22,6 @@ import redis.clients.jedis.ShardedJedis;
 import java.io.IOException;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 
 /**
@@ -43,8 +41,6 @@ public class EasyID {
      * 服务端开始生成新的ID的开关
      */
     private volatile boolean flag = false;
-
-    private ExecutorService executorService = Executors.newFixedThreadPool(16);
 
     private ZkClient zkClient;
 
@@ -73,7 +69,6 @@ public class EasyID {
                 public void run() {
                     zkClient.close();
                     jedisUtil.close();
-                    executorService.shutdown();
                 }
             }));
             SendThread sendThread = new SendThread();
@@ -200,10 +195,10 @@ public class EasyID {
 
         public void send(ChannelFuture future, Request request) {
             try {
-                // 将request对象写入outbundle处理后发出
+                // 将request对象写入outbundle处理后发出，异步发送
                 future.channel().writeAndFlush(request).sync();
                 // 服务器同步连接断开时,这句代码才会往下执行
-                //future.channel().closeFuture().sync();
+                future.channel().closeFuture().sync();
             } catch (InterruptedException e) {
                 e.printStackTrace();
                 logger.error(e.getMessage());
