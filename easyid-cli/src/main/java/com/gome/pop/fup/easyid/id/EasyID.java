@@ -164,7 +164,9 @@ public class EasyID {
                         String ip = zkClient.balance();
                         String host = IpUtil.getHost(ip);
                         int port = Constant.EASYID_SERVER_PORT;
+                        //从连接池中获取连接
                         ChannelFuture channelFuture = channelPool.get(host);
+                        //若池中没有，则建立连接，并放入连接池
                         if (channelFuture == null) {
                             channelFuture = connect(host, port);
                             channelPool.put(host, channelFuture);
