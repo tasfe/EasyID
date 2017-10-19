@@ -11,4 +11,6 @@ public class MessageType {
      *0:创建
      */
     public static final int REQUEST_TYPE_CREATE = 0;
+
+    public static final int REQUEST_TYPE_SERVER = 1;
 }
