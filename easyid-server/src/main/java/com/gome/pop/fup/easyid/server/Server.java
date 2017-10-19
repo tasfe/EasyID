@@ -102,27 +102,27 @@ public class Server {
             bossGroup = new NioEventLoopGroup(1);
             workerGroup = new NioEventLoopGroup(8);
             bootstrap = new ServerBootstrap();
+            bootstrap
+                    .group(bossGroup, workerGroup)
+                    .channel(NioServerSocketChannel.class)
+                    .childHandler(new ChannelInitializer<SocketChannel>() {
+
+                        @Override
+                        protected void initChannel(SocketChannel socketChannel)
+                                throws Exception {
+                            socketChannel.pipeline()
+                                    .addLast(new DecoderHandler(Request.class))
+                                    .addLast(new Handler(Server.this, jedisUtil));
+                        }
+                    }).option(ChannelOption.SO_BACKLOG, 128)
+                    .childOption(ChannelOption.SO_KEEPALIVE, true)
+                    .option(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
+                    .childOption(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT);
         }
 
         @Override
         public void run() {
             try {
-                bootstrap
-                        .group(bossGroup, workerGroup)
-                        .channel(NioServerSocketChannel.class)
-                        .childHandler(new ChannelInitializer<SocketChannel>() {
-
-                            @Override
-                            protected void initChannel(SocketChannel socketChannel)
-                                    throws Exception {
-                                socketChannel.pipeline()
-                                        .addLast(new DecoderHandler(Request.class))
-                                        .addLast(new Handler(Server.this, jedisUtil));
-                            }
-                        }).option(ChannelOption.SO_BACKLOG, 128)
-                        .childOption(ChannelOption.SO_KEEPALIVE, true)
-                        .option(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
-                        .childOption(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT);
                 ChannelFuture future = bootstrap.bind(IpUtil.getLocalHost(), Constant.EASYID_SERVER_PORT).sync();
                 future.channel().closeFuture().sync();
             } catch (Exception e) {
