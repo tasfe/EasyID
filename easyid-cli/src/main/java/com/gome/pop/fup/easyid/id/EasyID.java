@@ -163,14 +163,7 @@ public class EasyID {
                         //通过zookeeper的负载均衡算法，获取服务端ip地址
                         String ip = zkClient.balance();
                         String host = IpUtil.getHost(ip);
-                        int port = Constant.EASYID_SERVER_PORT;
-                        //从连接池中获取连接
-                        ChannelFuture channelFuture = channelPool.get(host);
-                        //若池中没有，则建立连接，并放入连接池
-                        if (channelFuture == null) {
-                            channelFuture = connect(host, port);
-                            channelPool.put(host, channelFuture);
-                        }
+                        ChannelFuture channelFuture = connectChannel(host, Constant.EASYID_SERVER_PORT);
                         send(channelFuture, request);      //发送
                     } catch (KeeperException e) {
                         e.printStackTrace();
@@ -181,6 +174,17 @@ public class EasyID {
                     }
                 }
             }
+        }
+
+        public ChannelFuture connectChannel(String host, int port) {
+            //从连接池中获取连接
+            ChannelFuture channelFuture = channelPool.get(host);
+            //若池中没有，则建立连接，并放入连接池
+            if (channelFuture == null) {
+                channelFuture = connect(host, port);
+                channelPool.put(host, channelFuture);
+            }
+            return channelFuture;
         }
 
         public ChannelFuture connect(String host, int port) {

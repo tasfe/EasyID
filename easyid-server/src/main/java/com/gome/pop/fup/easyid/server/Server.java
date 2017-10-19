@@ -67,25 +67,23 @@ public class Server {
 
     public void pushIdsInRedis() throws KeeperException, InterruptedException {
         ShardedJedis jedis = jedisUtil.getJedis();
+        String ip = (String) Cache.get(Constant.LOCALHOST);
         try {
             int redis_list_size = zkClient.getRedisListSize();
-            String ip = (String) Cache.get(Constant.LOCALHOST);
-            //zkClient.increase(ip);
-            new Thread(new IncreaseRunnable(zkClient, ip)).start();
             Long len = jedis.llen(Constant.REDIS_LIST_NAME);
-
+            if (null == len) len = 0l;
             if (len < (redis_list_size * 300)) {
-                logger.info("len : " + len);
-                if (null == len) len = 0l;
                 //批量生成id
                 long[] ids = snowflake.nextIds((redis_list_size * 1000) - len.intValue());
                 String[] strs = ConversionUtil.longsToStrings(ids);
-                logger.info("ids : " + ids.length);
                 //将生成的id存入redis队列
                 jedis.rpush(Constant.REDIS_LIST_NAME, strs);
+                jedis.expire(Constant.REDIS_LIST_NAME, 1800);
             }
         } finally {
             jedisUtil.returnResource(jedis);
+            //zkClient.increase(ip);
+            new Thread(new IncreaseRunnable(zkClient, ip)).start();
         }
     }
 
